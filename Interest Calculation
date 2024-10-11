@@ -49,7 +49,6 @@ public abstract class Account
 }
 
 package om.wipro.bank;
-
 public class RDAccount extends Account
 {
 	public RDAccount(int tensure,int principal)
@@ -73,9 +72,9 @@ public class RDAccount extends Account
         float nt = this.tenure * 4; 
         return (float)(this.principal*(Math.pow(1+(r/n),nt)-1));
 	}
-	
-	
-}
+	}
+
+
 package om.wipro.bank;
 class BankValidationException extends Exception {
 
