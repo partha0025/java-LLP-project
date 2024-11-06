@@ -1,0 +1,197 @@
+// DBUtil.java - Database connection class
+package com.wipro.bank.util;
+
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.SQLException;
+
+public class DBUtil {
+    static Connection con = null;
+
+    public static Connection getDBConnection() {
+        try {
+            Class.forName("com.mysql.cj.jdbc.Driver");
+            con = DriverManager.getConnection("jdbc:mysql://localhost:3306/project", "root", "sqlroot@27");
+        } catch (ClassNotFoundException e) {
+            System.out.println(e);
+        } catch (SQLException e) {
+            System.out.println(e);
+        }
+        return con;
+    }
+}
+
+// InsufficientFundsException.java - Custom exception
+package com.wipro.bank.util;
+
+public class InsufficientFundsException {
+    public String toString() {
+        return "INSUFFICIENT FUNDS";
+    }
+}
+
+// TransferBean.java - Entity class
+package com.wipro.bank.bean;
+import java.sql.Date;
+
+public class TransferBean {
+    private int transactionID;
+    private String fromAccountNumber;
+    private String toAccountNumber;
+    private Date dateOfTransaction;
+    private float amount;
+
+    // Getters and setters
+    public int getTransactionID() { return transactionID; }
+    public void setTransactionID(int transactionID) { this.transactionID = transactionID; }
+    public String getFromAccountNumber() { return fromAccountNumber; }
+    public void setFromAccountNumber(String fromAccountNumber) { this.fromAccountNumber = fromAccountNumber; }
+    public String getToAccountNumber() { return toAccountNumber; }
+    public void setToAccountNumber(String toAccountNumber) { this.toAccountNumber = toAccountNumber; }
+    public Date getDateOfTransaction() { return dateOfTransaction; }
+    public void setDateOfTransaction(Date date) { this.dateOfTransaction = date; }
+    public float getAmount() { return amount; }
+    public void setAmount(float amount) { this.amount = amount; }
+}
+
+// BankDAO.java - Data Access Object (DAO)
+package com.wipro.bank.dao;
+
+import com.wipro.bank.bean.TransferBean;
+import com.wipro.bank.util.DBUtil;
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+
+public class BankDAO {
+    public static int generateSequenceNumber() {
+        return (int) (Math.random() * 9000) + 1000;
+    }
+
+    public boolean validateAccount(String accountNumber) {
+        try (Connection con = DBUtil.getDBConnection()) {
+            String query = "SELECT COUNT(*) FROM ACCOUNT_TBL WHERE Account_Number = ?";
+            PreparedStatement pt = con.prepareStatement(query);
+            pt.setString(1, accountNumber);
+            ResultSet rs = pt.executeQuery();
+            if (rs.next()) { return rs.getInt(1) > 0; }
+        } catch (SQLException e) { System.out.println(e); }
+        return false;
+    }
+
+    public float findBalance(String accountNumber) {
+        try (Connection con = DBUtil.getDBConnection()) {
+            PreparedStatement pt = con.prepareStatement("Select Balance from ACCOUNT_TBL WHERE Account_Number = ?");
+            pt.setString(1, accountNumber);
+            ResultSet rs = pt.executeQuery();
+            if (rs.next()) { return rs.getFloat("Balance"); }
+        } catch (SQLException e) { System.out.println(e); }
+        return -1;
+    }
+
+    public boolean transferMoney(TransferBean transferBean) {
+        try (Connection con = DBUtil.getDBConnection()) {
+            PreparedStatement pt = con.prepareStatement("insert into TRANSFER_TBL Values(?,?,?,?,?)");
+            pt.setInt(1, generateSequenceNumber());
+            pt.setString(2, transferBean.getFromAccountNumber());
+            pt.setString(3, transferBean.getToAccountNumber());
+            pt.setDate(4, transferBean.getDateOfTransaction());
+            pt.setFloat(5, transferBean.getAmount());
+            return pt.executeUpdate() > 0;
+        } catch (SQLException e) { System.out.println(e); }
+        return false;
+    }
+
+    public boolean updateBalance(String accountNumber, float newBalance) {
+        try (Connection con = DBUtil.getDBConnection()) {
+            PreparedStatement pt = con.prepareStatement("Update ACCOUNT_TBL set Balance = ? where Account_Number = ?");
+            pt.setFloat(1, newBalance);
+            pt.setString(2, accountNumber);
+            return pt.executeUpdate() > 0;
+        } catch (SQLException e) { System.out.println(e); }
+        return false;
+    }
+}
+
+// BankMain.java - Main class
+package com.wipro.bank.service;
+
+import com.wipro.bank.bean.TransferBean;
+import com.wipro.bank.dao.BankDAO;
+import com.wipro.bank.util.InsufficientFundsException;
+import java.sql.Date;
+import java.util.Scanner;
+
+public class BankMain {
+    static BankDAO dao = new BankDAO();
+
+    public static void main(String[] args) {
+        BankMain bm = new BankMain();
+        Scanner input = new Scanner(System.in);
+        System.out.println("Enter Your Account Number: ");
+        String ac_no = input.next();
+
+        if (dao.validateAccount(ac_no)) {
+            System.out.println(bm.checkBalance(ac_no));
+            System.out.println("Press 1 To Continue with Transaction");
+            int num = input.nextInt();
+
+            if (num == 1) {
+                System.out.println("Enter The Beneficiary Account Number: ");
+                String t_ac_no = input.next();
+                System.out.println("Enter Transaction Amount: ");
+                int amount = input.nextInt();
+
+                TransferBean t = new TransferBean();
+                t.setFromAccountNumber(ac_no);
+                t.setAmount(amount);
+                t.setToAccountNumber(t_ac_no);
+                t.setDateOfTransaction(new Date(System.currentTimeMillis()));
+
+                System.out.println(bm.transfer(t));
+            } else { System.out.println("Transaction Terminated"); }
+        } else { System.out.println("INVALID ACCOUNT NUMBER"); }
+    }
+
+    public static String checkBalance(String accountNumber) {
+        if (dao.validateAccount(accountNumber)) {
+            float balance = dao.findBalance(accountNumber);
+            return (balance != -1) ? "Balance: " + balance : "BALANCE NOT FOUND";
+        } else { return "INVALID ACCOUNT NUMBER"; }
+    }
+
+    public String transfer(TransferBean transferBean) {
+        if (transferBean == null) { return "INVALID INPUT"; }
+
+        String fromAccountNumber = transferBean.getFromAccountNumber();
+        String toAccountNumber = transferBean.getToAccountNumber();
+
+        if (!dao.validateAccount(fromAccountNumber) || !dao.validateAccount(toAccountNumber)) {
+            return "INVALID ACCOUNT NUMBER";
+        }
+
+        float balance = dao.findBalance(fromAccountNumber);
+
+        if (balance < transferBean.getAmount()) {
+            return new InsufficientFundsException().toString();
+        }
+
+        boolean updateFromAccount = dao.updateBalance(fromAccountNumber, balance - transferBean.getAmount());
+
+        if (updateFromAccount) {
+            float newBalance = dao.findBalance(toAccountNumber);
+            boolean updateToAccount = dao.updateBalance(toAccountNumber, newBalance + transferBean.getAmount());
+
+            if (updateToAccount) {
+                dao.transferMoney(transferBean);
+                System.out.println("Your Current " + BankMain.checkBalance(fromAccountNumber));
+                return "TRANSACTION SUCCEEDED";
+            } else {
+                return "TRANSFER FAILED";
+            }
+        } else {
+            return "TRANSACTION FAILED";
+        }
+    }
+}
